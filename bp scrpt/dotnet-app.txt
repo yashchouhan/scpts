@@ -1,0 +1,76 @@
+#!/bin/bash -ex
+
+API_ENDPOINT=https://api.sys.test.cfdev.canopy-cloud.com
+CF_ADMIN_USER=admin
+CF_ADMIN_PASSWORD=DipfopOddEpsUlsEerfOavwoHenIqu
+CF_APP_DOMAIN=apps.test.cfdev.canopy-cloud.com
+CF_SYS_DOMAIN=sys.test.cfdev.canopy-cloud.com
+
+# Below Api Endpoint are need for CF Login Method
+PREPROD_API_ENDPOINT=https://api.sys.preprod.cfdev.canopy-cloud.com
+PROD_API_ENDPOINT=https://api.sys.eu01.cf.canopy-cloud.com
+
+
+
+r=$RANDOM
+
+#To Print Current Date and Time
+now="$(date)"
+printf "Current date and time %s\n" "$now"
+
+
+Cf_Login()
+{
+ if [ "${API_ENDPOINT}" == "${PROD_API_ENDPOINT}" ]; then
+   cf api $API_ENDPOINT
+   cf auth $1 $2
+ elif [ "${API_ENDPOINT}" == "${PREPROD_API_ENDPOINT}" ]; then
+   cf api $API_ENDPOINT
+   cf auth $1 $2
+ else
+   cf api --skip-ssl-validation $API_ENDPOINT
+   cf auth $1 $2
+ fi
+}
+
+
+Cf_Login $CF_USER $CF_ADMIN_PASSWORD
+#Create_Org_And_View_Org DotNet-Org
+#Create_Space DotNet-Space
+
+cf target -o oscf-sys -s testing
+echo "Pushing dotnet app"
+
+APP_NAME="windows-test-app-$r"
+SERVICE_NAME="windows-test-service-$r"
+
+cd ../oscf-manifest-stubs/ci/aws/dotnet/acf-dotnet-environment-viewer/ViewEnvironment
+cf push $APP_NAME -s windows2012R2 -b https://github.com/ryandotsmith/null-buildpack.git -m 1G --no-start
+app_guid=$(cf app $APP_NAME --guid)
+
+cf curl /v2/apps/$app_guid -X PUT -d '{"diego":true, "enable_ssh":false}'
+
+cf start $APP_NAME
+app_route=$(cf a | grep $APP_NAME | awk '{ print $6 }')
+curl -f $app_route
+
+ cf marketplace | egrep "*mysql"
+  res=$?
+
+  if [ $res -eq 0 ]; then
+  echo "Creating Mysql Service Instance"
+  cf create-service p-mysql default $SERVICE_NAME
+  cf bind-service $APP_NAME $SERVICE_NAME
+  else
+  echo "MySQL service not found in marketplace."
+  exit 1
+  fi
+
+  cf restage $APP_NAME
+
+#  cf unbind-service $APP_NAME $SERVICE_NAME
+#  cf delete-service $SERVICE_NAME -f
+#  cf delete $APP_NAME -f
+
+
+exit $EXIT_STATUS
